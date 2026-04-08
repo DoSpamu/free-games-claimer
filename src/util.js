@@ -110,65 +110,39 @@ export const confirm = o => prompt({ type: 'confirm', message: 'Continue?', ...o
 import { execFile } from 'child_process';
 import { cfg } from './config.js';
 
-export const notify = html => new Promise((resolve, reject) => {
-  if (!cfg.notify) {
-    if (cfg.debug) console.debug('notify: NOTIFY is not set!');
-    return resolve();
+export const notify = html => {
+  // Discord webhook — fire and forget alongside Apprise, never throws
+  if (process.env.DISCORD_WEBHOOK) {
+    import('./discord.js').then(({ notifyFromHtml }) =>
+      notifyFromHtml(cfg.notify_title || 'Free Games Claimer', html)
+    ).catch(e => console.error(`Discord notify failed: ${e.message}`));
   }
-  // const cmd = `apprise '${cfg.notify}' ${title} -i html -b '${html}'`; // this had problems if e.g. ' was used in arg; could have `npm i shell-escape`, but instead using safer execFile which takes args as array instead of exec which spawned a shell to execute the command
-  const args = [cfg.notify, '-i', 'html', '-b', `'${html}'`];
-  if (cfg.notify_title) args.push(...['-t', cfg.notify_title]);
-  if (cfg.debug) console.debug(`apprise ${args.map(a => `'${a}'`).join(' ')}`); // this also doesn't escape, but it's just for info
-  execFile('apprise', args, (error, stdout, stderr) => {
-    if (error) {
-      console.log(`error: ${error.message}`);
-      if (error.message.includes('command not found')) {
-        console.info('Run `pip install apprise`. See https://github.com/vogler/free-games-claimer#notifications');
-      }
-      return reject(error);
+
+  // Apprise — original behaviour, unchanged
+  return new Promise((resolve, reject) => {
+    if (!cfg.notify) {
+      if (cfg.debug) console.debug('notify: NOTIFY is not set!');
+      return resolve();
     }
-    if (stderr) console.error(`stderr: ${stderr}`);
-    if (stdout) console.log(`stdout: ${stdout}`);
-    resolve();
+    // const cmd = `apprise '${cfg.notify}' ${title} -i html -b '${html}'`; // this had problems if e.g. ' was used in arg; could have `npm i shell-escape`, but instead using safer execFile which takes args as array instead of exec which spawned a shell to execute the command
+    const args = [cfg.notify, '-i', 'html', '-b', `'${html}'`];
+    if (cfg.notify_title) args.push(...['-t', cfg.notify_title]);
+    if (cfg.debug) console.debug(`apprise ${args.map(a => `'${a}'`).join(' ')}`); // this also doesn't escape, but it's just for info
+    execFile('apprise', args, (error, stdout, stderr) => {
+      if (error) {
+        console.log(`error: ${error.message}`);
+        if (error.message.includes('command not found')) {
+          console.info('Run `pip install apprise`. See https://github.com/vogler/free-games-claimer#notifications');
+        }
+        return reject(error);
+      }
+      if (stderr) console.error(`stderr: ${stderr}`);
+      if (stdout) console.log(`stdout: ${stdout}`);
+      resolve();
+    });
   });
-});
-
-/**
- * Send Discord + Apprise notifications based on claim results.
- *
- * Call this at the end of each platform script instead of (or alongside) notify().
- *
- * @param {string} platform   e.g. 'Epic Games'
- * @param {{ title: string, url?: string, status: string }[]} games
- *   All games that were processed. Filter by status internally.
- */
-export const notifyResult = async (platform, games = []) => {
-  const { notifySuccess, notifyEmpty, notifyError } = await import('./discord.js');
-
-  const claimed = games.filter(g => g.status === 'claimed');
-  const failed  = games.filter(g => g.status === 'failed');
-
-  // --- Discord ---
-  if (claimed.length > 0) {
-    await notifySuccess(platform, claimed).catch(e =>
-      console.error(`Discord notifySuccess failed: ${e.message}`)
-    );
-  } else if (failed.length > 0) {
-    await notifyError(platform, new Error(`${failed.length} game(s) failed to claim`)).catch(e =>
-      console.error(`Discord notifyError failed: ${e.message}`)
-    );
-  } else {
-    await notifyEmpty([platform]).catch(e =>
-      console.error(`Discord notifyEmpty failed: ${e.message}`)
-    );
-  }
-
-  // --- Apprise (existing) ---
-  if (games.length > 0) {
-    const html = `<b>${platform}</b><br>${html_game_list(games)}`;
-    await notify(html).catch(e => console.error(`Apprise notify failed: ${e.message}`));
-  }
 };
+
 
 export const escapeHtml = unsafe => unsafe.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll('\'', '&#039;');
 

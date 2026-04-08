@@ -4,6 +4,7 @@
  * Set env var DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
  *
  * Exports:
+ *   notifyFromHtml(title, html)         – called automatically by util.notify(); converts game-list HTML to embed
  *   notifyJobStart(platforms)          – job started
  *   notifySuccess(platform, games)     – games claimed
  *   notifyEmpty(platforms)             – nothing to claim (all platforms done, 0 new)
@@ -86,6 +87,41 @@ const ts = () => new Date().toISOString();
  * Sent at the very beginning of a run.
  * @param {string[]} platforms  e.g. ['Epic', 'GOG', 'Prime Gaming', 'Steam']
  */
+/**
+ * Convert the HTML game list produced by html_game_list() to Discord markdown
+ * and send as an embed. Called automatically by util.notify() — no changes
+ * needed in platform scripts.
+ *
+ * @param {string} title  e.g. cfg.notify_title or 'Free Games Claimer'
+ * @param {string} html   raw HTML from html_game_list()
+ */
+export const notifyFromHtml = async (title, html) => {
+  if (!WEBHOOK_URL) return;
+
+  // Convert HTML game list to Discord markdown:
+  //   <a href="URL">Title</a> (status)  →  [Title](URL) (status)
+  //   <br>                               →  \n
+  const text = html
+    .replace(/<a href="([^"]+)">([^<]+)<\/a>/gi, '[$2]($1)')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .trim();
+
+  await post({
+    embeds: [{
+      title: `✅ ${title}`,
+      color: 0x57F287,
+      description: text.slice(0, 2000) || '(brak szczegółów)',
+      timestamp: ts(),
+      footer: { text: 'free-games-claimer' },
+    }],
+  });
+};
+
 export const notifyJobStart = async (platforms = []) => {
   await post({
     embeds: [{
