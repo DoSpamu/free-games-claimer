@@ -49,12 +49,22 @@ const TZ            = process.env.TZ             || 'Europe/Warsaw';
 const HEALTH_PORT   = parseInt(process.env.HEALTH_PORT || '8080', 10);
 const RUN_ON_START  = process.env.RUN_ON_START   === '1';
 
-const SCRIPTS = [
-  { name: 'Steam',        file: 'steam-games'  },
-  { name: 'Epic Games',   file: 'epic-games'   },
-  { name: 'Prime Gaming', file: 'prime-gaming' },
-  { name: 'GOG',          file: 'gog'          },
+// Which platforms to run — controlled by env vars (default: all enabled).
+// Set CLAIM_STEAM=0, CLAIM_EPIC=0, etc. to disable individual platforms.
+const ALL_SCRIPTS = [
+  { name: 'Steam',        file: 'steam-games',  env: 'CLAIM_STEAM'  },
+  { name: 'Epic Games',   file: 'epic-games',   env: 'CLAIM_EPIC'   },
+  { name: 'Prime Gaming', file: 'prime-gaming', env: 'CLAIM_PRIME'  },
+  { name: 'GOG',          file: 'gog',          env: 'CLAIM_GOG'    },
 ];
+
+const SCRIPTS = ALL_SCRIPTS.filter(s => process.env[s.env] !== '0');
+
+if (SCRIPTS.length === 0) {
+  logger.error('All platforms disabled (CLAIM_* = 0). Enable at least one.');
+  process.exit(1);
+}
+logger.info(`Enabled platforms: ${SCRIPTS.map(s => s.name).join(', ')}`);
 
 // ---------------------------------------------------------------------------
 // State

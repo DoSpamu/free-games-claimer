@@ -25,6 +25,12 @@ services:
       - HEALTH_PORT=8080
       - LOG_LEVEL=INFO             # DEBUG | INFO | WARN | ERROR
 
+      # ------ Platformy (domyślnie wszystkie włączone, ustaw 0 by wyłączyć) ------
+      - CLAIM_STEAM=1
+      - CLAIM_EPIC=1
+      - CLAIM_PRIME=1
+      - CLAIM_GOG=1
+
       # ------ Discord webhook (nowe) ------
       # - DISCORD_WEBHOOK=https://discord.com/api/webhooks/TWOJE_ID/TOKEN
 
