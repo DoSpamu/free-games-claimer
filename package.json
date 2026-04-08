@@ -1,0 +1,39 @@
+{
+  "name": "free-games-claimer",
+  "version": "1.4.0",
+  "description": "Automatically claims free games on the Epic Games Store, Amazon Prime Gaming and GOG.",
+  "homepage": "https://github.com/vogler/free-games-claimer",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vogler/free-games-claimer.git"
+  },
+  "author": "Ralf Vogler",
+  "license": "AGPL-3.0-only",
+  "main": "index.js",
+  "scripts": {
+    "lint": "npx eslint .",
+    "start": "node scheduler.js",
+    "docker:build": "docker build . -t ghcr.io/vogler/free-games-claimer",
+    "docker:build-log": "(docker buildx build --progress=plain . -t ghcr.io/vogler/free-games-claimer; docker image ls) 2>&1 | tee data/docker-build.log",
+    "docker": "docker run --rm -it -p 6080:6080 -p 8080:8080 -v fgc:/fgc/data --pull=always ghcr.io/vogler/free-games-claimer",
+    "deps:update": "npx taze major -w && npm i"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=17"
+  },
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "dotenv": "^17.2.0",
+    "enquirer": "^2.4.1",
+    "fingerprint-injector": "^2.1.69",
+    "lowdb": "^7.0.1",
+    "node-cron": "^3.0.3",
+    "otplib": "^12.0.1",
+    "patchright": "^1.52.5"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin": "^5.2.2",
+    "eslint": "^9.31.0"
+  }
+}

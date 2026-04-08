@@ -1,0 +1,82 @@
+services:
+  free-games-claimer:
+    image: ghcr.io/p-adamiec/free-games-claimer:enhanced
+    container_name: fgc
+    # build: .   # odkomentuj jeśli budujesz lokalnie
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    ports:
+      - "6080:6080"   # noVNC
+      - "8080:8080"   # health / manual trigger
+    volumes:
+      - fgc_data:/fgc/data
+
+    # --- SCHEDULER (nowe) ---
+    # Żaden 'command:' nie jest tu potrzebny – CMD w Dockerfile uruchamia scheduler.js
+    # Możesz nadpisać, np. by uruchomić tylko jeden skrypt:
+    #   command: node epic-games.js
+
+    environment:
+      # ------ Scheduler ------
+      - CRON_SCHEDULE=0 7 * * *    # codziennie o 07:00
+      - TZ=Europe/Warsaw
+      - RUN_ON_START=0             # ustaw na 1, by uruchomić od razu po starcie
+      - HEALTH_PORT=8080
+      - LOG_LEVEL=INFO             # DEBUG | INFO | WARN | ERROR
+
+      # ------ Discord webhook (nowe) ------
+      # - DISCORD_WEBHOOK=https://discord.com/api/webhooks/TWOJE_ID/TOKEN
+
+      # ------ Apprise (istniejące) ------
+      # - NOTIFY=tgram://bottoken/chatid
+      # - NOTIFY_TITLE=Free Games Claimer
+
+      # ------ VNC ------
+      - SHOW=1
+      - WIDTH=1920
+      - HEIGHT=1080
+      # - VNC_PASSWORD=
+
+      # ------ Dane logowania ------
+      # - EMAIL=
+      # - PASSWORD=
+
+      # Epic Games
+      # - EG_EMAIL=
+      # - EG_PASSWORD=
+      # - EG_OTPKEY=
+      # - EG_PARENTALPIN=
+
+      # Prime Gaming
+      # - PG_EMAIL=
+      # - PG_PASSWORD=
+      # - PG_OTPKEY=
+      # - PG_REDEEM=0
+      # - PG_CLAIMDLC=0
+
+      # GOG
+      # - GOG_EMAIL=
+      # - GOG_PASSWORD=
+      # - GOG_NEWSLETTER=0
+
+      # Steam
+      # - STEAM_USERNAME=
+      # - STEAM_PASSWORD=
+
+      # ------ Inne ------
+      # - TIMEOUT=60
+      # - LOGIN_TIMEOUT=100
+
+    healthcheck:
+      # Sprawdza noVNC i scheduler health endpoint
+      test: >
+        curl --fail http://localhost:6080 &&
+        curl --fail http://localhost:8080/health
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  fgc_data:
