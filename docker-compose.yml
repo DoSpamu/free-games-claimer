@@ -29,34 +29,29 @@ services:
       - HEIGHT=1080
       # - VNC_PASSWORD=tajnehaslo   # zalecane — bez hasła noVNC jest otwarte!
 
-      # ------ Dane logowania ------
+      # ------ Dane logowania (OPCJONALNE) ------
+      # Bez tych zmiennych: zaloguj się raz ręcznie przez VNC (http://IP:6080).
+      # Sesja zostaje zapamiętana w wolumenie fgc_data — kolejne uruchomienia
+      # działają automatycznie bez ponownego logowania.
+      #
+      # Podaj credentials tylko jeśli chcesz w pełni automatyczne logowanie
+      # (przydatne zwłaszcza przy 2FA — skrypt sam generuje OTP z klucza).
+      #
+      # Wspólne dla wszystkich platform:
       # - EMAIL=twoj@email.com
       # - PASSWORD=haslo
-
-      # Epic Games
-      # - EG_EMAIL=
+      #
+      # Lub osobne per platforma (nadpisują EMAIL/PASSWORD):
+      # - EG_EMAIL=           # Epic Games
       # - EG_PASSWORD=
-      # - EG_OTPKEY=
-      # - EG_PARENTALPIN=
-
-      # Prime Gaming
-      # - PG_EMAIL=
+      # - EG_OTPKEY=          # klucz 2FA — skrypt sam generuje kod
+      # - PG_EMAIL=           # Prime Gaming
       # - PG_PASSWORD=
       # - PG_OTPKEY=
-      # - PG_REDEEM=0
-      # - PG_CLAIMDLC=0
-
-      # GOG
-      # - GOG_EMAIL=
+      # - GOG_EMAIL=          # GOG
       # - GOG_PASSWORD=
-
-      # Steam
-      # - STEAM_USERNAME=
+      # - STEAM_USERNAME=     # Steam (login, nie email)
       # - STEAM_PASSWORD=
-
-      # ------ Inne ------
-      # - TIMEOUT=60
-      # - LOGIN_TIMEOUT=180
 
     healthcheck:
       test: curl --fail http://localhost:6080 || exit 1
