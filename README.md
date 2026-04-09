@@ -42,42 +42,44 @@ services:
     command: bash -c "node run.js prime-gaming gog epic-games aliexpress; sleep 1d"
 
     environment:
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=INFO             # DEBUG | INFO | WARN | ERROR
 
-      # --- Discord ---
-      - DISCORD_WEBHOOK=https://discord.com/api/webhooks/TWOJE_ID/TOKEN
+      # ------ Discord webhook ------
+      # - DISCORD_WEBHOOK=https://discord.com/api/webhooks/TWOJE_ID/TOKEN
 
-      # --- Dane logowania ---
-      - EMAIL=twoj@email.com
-      - PASSWORD=haslo
+      # ------ Apprise (alternatywne powiadomienia) ------
+      # - NOTIFY=tgram://bottoken/chatid
+      # - NOTIFY_TITLE=Free Games Claimer
 
-      # Epic Games
-      - EG_EMAIL=
-      - EG_PASSWORD=
-      - EG_OTPKEY=
-
-      # Prime Gaming
-      - PG_EMAIL=
-      - PG_PASSWORD=
-      - PG_OTPKEY=
-
-      # GOG
-      - GOG_EMAIL=
-      - GOG_PASSWORD=
-
-      # Steam
-      - STEAM_USERNAME=
-      - STEAM_PASSWORD=
-
-      # --- VNC ---
+      # ------ VNC ------
       - SHOW=1
       - WIDTH=1920
       - HEIGHT=1080
-      # - VNC_PASSWORD=tajnehaslo   # zalecane!
+      # - VNC_PASSWORD=tajnehaslo   # zalecane — bez hasła noVNC jest otwarte!
 
-      # --- Apprise (alternatywne powiadomienia) ---
-      # - NOTIFY=tgram://bottoken/chatid
-      # - NOTIFY_TITLE=Free Games Claimer
+      # ------ Dane logowania (OPCJONALNE) ------
+      # Bez tych zmiennych: zaloguj się raz ręcznie przez VNC (http://IP:6080).
+      # Sesja zostaje zapamiętana w wolumenie fgc_data — kolejne uruchomienia
+      # działają automatycznie bez ponownego logowania.
+      #
+      # Podaj credentials tylko jeśli chcesz w pełni automatyczne logowanie
+      # (przydatne zwłaszcza przy 2FA — skrypt sam generuje OTP z klucza).
+      #
+      # Wspólne dla wszystkich platform:
+      # - EMAIL=twoj@email.com
+      # - PASSWORD=haslo
+      #
+      # Lub osobne per platforma (nadpisują EMAIL/PASSWORD):
+      # - EG_EMAIL=           # Epic Games
+      # - EG_PASSWORD=
+      # - EG_OTPKEY=          # klucz 2FA — skrypt sam generuje kod
+      # - PG_EMAIL=           # Prime Gaming
+      # - PG_PASSWORD=
+      # - PG_OTPKEY=
+      # - GOG_EMAIL=          # GOG
+      # - GOG_PASSWORD=
+      # - STEAM_USERNAME=     # Steam (login, nie email)
+      # - STEAM_PASSWORD=
 
     healthcheck:
       test: curl --fail http://localhost:6080 || exit 1
