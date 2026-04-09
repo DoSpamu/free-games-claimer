@@ -2,19 +2,13 @@
 
 Fork of [p-adamiec/free-games-claimer:enhanced](https://github.com/p-adamiec/free-games-claimer) adds:
 
-- **Daemon mode** — kontener działa wiecznie, skrypty odpalają się automatycznie o zadanej godzinie (domyślnie 07:00). Zero `recreate` w Portainerze.
-- **Discord webhook** — powiadomienia: container online, job start, odebrane gry, brak gier, błąd + screenshot, podsumowanie, weekly digest, update upstream.
-- **Per-platform toggles** — włącz/wyłącz platformy przez env (`CLAIM_EPIC=0`).
-- **Retry po błędzie** — nieudane platformy automatycznie ponawiane po 30 minutach.
-- **Screenshot w błędzie** — załącza ostatni screenshot PNG bezpośrednio do embeda Discord.
-- **Weekly digest** — co niedzielę o 10:00 podsumowanie co odebrano w ostatnich 7 dniach.
-- **HTTP health endpoint** — `GET /health` + `POST /run` (ręczne uruchomienie bez restartu kontenera).
-- **Walidacja credentials** — ostrzeżenie przy starcie gdy brak danych logowania dla włączonej platformy.
-- **Upstream update check** — powiadomienie na Discord gdy w upstream repo pojawiły się nowe commity.
+- **Discord webhook** — powiadomienia o odebranych grach jako embedded messages.
 - **Slim Dockerfile** — `FROM upstream` zamiast full build; budowanie trwa ~15 sekund.
 - **Structured logging** — timestampy, poziomy INFO/WARN/ERROR widoczne w `docker logs`.
 
-Upstream obsługuje: Epic Games, Amazon Prime Gaming, GOG, Steam.
+Upstream obsługuje: Epic Games, Amazon Prime Gaming, GOG, Steam, AliExpress.
+
+**Harmonogram:** `restart: unless-stopped` + `sleep 1d` na końcu komendy — kontener uruchamia się raz, robi co ma zrobić, zasypia na dobę, Docker restartuje go automatycznie.
 
 ---
 
@@ -33,28 +27,21 @@ Upstream obsługuje: Epic Games, Amazon Prime Gaming, GOG, Steam.
 ```yaml
 services:
   free-games-claimer:
-    image: ghcr.io/p-adamiec/free-games-claimer:enhanced
     container_name: fgc
     build:
       context: https://github.com/DoSpamu/free-games-claimer.git#master
     restart: unless-stopped
     ports:
       - "6080:6080"   # noVNC — podgląd przeglądarki
-      - "8080:8080"   # health / ręczne uruchomienie
     volumes:
       - fgc_data:/fgc/data
-    environment:
-      # --- Scheduler ---
-      - CRON_SCHEDULE=0 7 * * *
-      - TZ=Europe/Warsaw
-      - RUN_ON_START=0
-      - LOG_LEVEL=INFO
 
-      # --- Platformy (0 = wyłączona) ---
-      - CLAIM_STEAM=1
-      - CLAIM_EPIC=1
-      - CLAIM_PRIME=1
-      - CLAIM_GOG=1
+    # Wybierz platformy które chcesz — usuń lub dodaj skrypty w command.
+    # sleep 1d + restart: unless-stopped = uruchamia się automatycznie co dobę.
+    command: bash -c "node prime-gaming; node gog; node epic-games; node aliexpress; sleep 1d"
+
+    environment:
+      - LOG_LEVEL=INFO
 
       # --- Discord ---
       - DISCORD_WEBHOOK=https://discord.com/api/webhooks/TWOJE_ID/TOKEN
@@ -85,16 +72,14 @@ services:
       - SHOW=1
       - WIDTH=1920
       - HEIGHT=1080
-      # - VNC_PASSWORD=
+      # - VNC_PASSWORD=tajnehaslo   # zalecane!
 
       # --- Apprise (alternatywne powiadomienia) ---
       # - NOTIFY=tgram://bottoken/chatid
       # - NOTIFY_TITLE=Free Games Claimer
 
     healthcheck:
-      test: >
-        curl --fail http://localhost:6080 &&
-        curl --fail http://localhost:8080/health
+      test: curl --fail http://localhost:6080 || exit 1
       interval: 30s
       timeout: 10s
       start_period: 20s
@@ -104,7 +89,7 @@ volumes:
   fgc_data:
 ```
 
-> **Uwaga:** `build: context: https://github.com/...` wymaga, żeby Portainer miał dostęp do internetu i mógł zbudować obraz. Przy pierwszym deploymencie build może zająć kilka minut.
+> **Uwaga:** `build: context: https://github.com/...` wymaga dostępu do internetu i zajmuje ~15 sekund (slim build od upstream).
 
 ### Krok 3 — Pierwsze logowanie
 
@@ -114,44 +99,38 @@ Po starcie kontenera przeglądarki platform wymagają ręcznego zalogowania się
 2. Wpisz dane logowania w terminalowym prompcie lub zaloguj się ręcznie w przeglądarce
 3. Skrypt czeka `LOGIN_TIMEOUT` sekund (domyślnie 180s)
 
-Po zalogowaniu sesja trwa i kolejne uruchomienia powinny działać w pełni automatycznie.
+Po zalogowaniu sesja trwa i kolejne uruchomienia działają w pełni automatycznie.
+
+---
+
+## Wybór platform
+
+Edytuj `command:` w docker-compose — dodaj lub usuń skrypty:
+
+```yaml
+# Tylko Prime Gaming i GOG:
+command: bash -c "node prime-gaming; node gog; sleep 1d"
+
+# Wszystkie dostępne:
+command: bash -c "node steam-games; node epic-games; node prime-gaming; node gog; node aliexpress; sleep 1d"
+```
 
 ---
 
 ## Zmienne środowiskowe
 
-### Scheduler
-
-| Zmienna | Domyślnie | Opis |
-|---------|-----------|------|
-| `CRON_SCHEDULE` | `0 7 * * *` | Harmonogram (format cron) |
-| `TZ` | `Europe/Warsaw` | Strefa czasowa dla crona |
-| `RUN_ON_START` | `0` | `1` = uruchom też od razu po starcie kontenera |
-| `RETRY_FAILED` | `1` | `0` = wyłącz automatyczny retry po błędzie |
-| `WEEKLY_DIGEST` | `1` | `0` = wyłącz tygodniowe podsumowanie |
-| `HEALTH_PORT` | `8080` | Port HTTP dla `/health` i `/run` |
-| `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARN` / `ERROR` |
-
-### Platformy
-
-| Zmienna | Domyślnie | Opis |
-|---------|-----------|------|
-| `CLAIM_STEAM` | `1` | `0` = pomiń Steam |
-| `CLAIM_EPIC` | `1` | `0` = pomiń Epic Games |
-| `CLAIM_PRIME` | `1` | `0` = pomiń Prime Gaming |
-| `CLAIM_GOG` | `1` | `0` = pomiń GOG |
-
 ### Powiadomienia
 
 | Zmienna | Opis |
 |---------|------|
-| `DISCORD_WEBHOOK` | URL Discord webhook (embeds: start / gry / błąd / podsumowanie) |
+| `DISCORD_WEBHOOK` | URL Discord webhook — embed z listą odebranych gier |
 | `NOTIFY` | Apprise URL — Telegram, Slack, email i inne (patrz [apprise docs](https://github.com/caronc/apprise)) |
 | `NOTIFY_TITLE` | Opcjonalny tytuł powiadomień Apprise |
+| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARN` / `ERROR` (domyślnie `INFO`) |
 
 ### Dane logowania
 
-Możesz ustawić wspólny `EMAIL` / `PASSWORD` dla wszystkich platform, lub osobne zmienne dla każdej:
+Możesz ustawić wspólny `EMAIL` / `PASSWORD` dla wszystkich platform, lub osobne zmienne:
 
 | Platforma | Email | Hasło | 2FA OTP key |
 |-----------|-------|-------|-------------|
@@ -164,37 +143,11 @@ Pełna lista opcji: [`src/config.js`](https://github.com/p-adamiec/free-games-cl
 
 ---
 
-## Health check i ręczne uruchomienie
-
-```bash
-# Status schedulera
-curl http://TWOJ_IP:8080/health
-
-# Przykładowa odpowiedź:
-# {
-#   "status": "ok",
-#   "running": false,
-#   "lastRun": "2026-04-08T07:00:04.123Z",
-#   "lastStatus": "ok",
-#   "runCount": 5,
-#   "schedule": "0 7 * * *",
-#   "timezone": "Europe/Warsaw",
-#   "uptime": 432001
-# }
-
-# Ręczne uruchomienie (bez restartu kontenera)
-curl -X POST http://TWOJ_IP:8080/run
-```
-
-Portainer pokazuje stan healthchecku bezpośrednio na liście kontenerów.
-
----
-
 ## Podgląd przeglądarki (VNC)
 
-Otwórz `http://TWOJ_IP:6080` — noVNC z podglądem tego co robi Chromium w kontenerze. Przydatne przy pierwszym logowaniu lub debugowaniu.
+Otwórz `http://TWOJ_IP:6080` — noVNC z podglądem Chromium w kontenerze. Przydatne przy pierwszym logowaniu lub debugowaniu.
 
-Opcjonalnie ustaw `VNC_PASSWORD` w env, żeby zabezpieczyć dostęp.
+Ustaw `VNC_PASSWORD` w env żeby zabezpieczyć dostęp.
 
 ---
 
@@ -205,33 +158,15 @@ docker logs fgc -f
 # lub w Portainerze: Containers → fgc → Logs
 ```
 
-Przykładowy output schedulera:
-
-```
-2026-04-08 07:00:00.000 [INFO ] Scheduler ready. Cron: "0 7 * * *" TZ: Europe/Warsaw
-2026-04-08 07:00:00.001 [INFO ] Enabled platforms: Steam, Epic Games, Prime Gaming, GOG
-2026-04-08 07:00:00.002 [INFO ] Health server listening on :8080
-2026-04-08 07:00:00.003 [INFO ] >>> JOB START: Run #1
-2026-04-08 07:00:00.004 [INFO ]   → Running: Steam (node steam-games.js)
-...
-2026-04-08 07:04:12.881 [INFO ] <<< JOB END:   Run #1 (252.88s)
-```
-
 ---
 
 ## Powiadomienia Discord
 
-Scheduler wysyła automatycznie:
+Wysyłane automatycznie przez `notify()` gdy skrypt platformy odbierze gry:
 
 | Embed | Kiedy |
 |-------|-------|
-| 🟢 **Claimer online** | Po każdym starcie kontenera |
-| 🚀 **Job uruchomiony** | Na początku każdego uruchomienia |
-| ✅ **Odebrano gry** | Gdy skrypt platformy odbierze gry |
-| 📋 **Podsumowanie** | Na końcu każdego uruchomienia |
-| ❌ **Błąd + screenshot** | Gdy skrypt platformy zakończy się z błędem |
-| 📅 **Weekly digest** | Co niedzielę o 10:00 — co odebrano w ostatnich 7 dniach |
-| 🔄 **Aktualizacja upstream** | Gdy upstream repo ma nowe commity |
+| ✅ **Odebrano gry** | Gdy platforma odbierze przynajmniej jedną grę |
 
 ---
 

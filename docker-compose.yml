@@ -6,24 +6,15 @@ services:
     restart: unless-stopped
     ports:
       - "6080:6080"   # noVNC — podgląd przeglądarki w kontenerze
-      - "8080:8080"   # health check / ręczne uruchomienie
     volumes:
       - fgc_data:/fgc/data
-    environment:
-      # ------ Scheduler ------
-      - CRON_SCHEDULE=0 7 * * *    # codziennie o 07:00
-      - TZ=Europe/Warsaw
-      - RUN_ON_START=0             # 1 = uruchom też od razu po starcie
-      - RETRY_FAILED=1             # 1 = ponów próbę po błędzie (po 30 min)
-      - WEEKLY_DIGEST=1            # 1 = tygodniowe podsumowanie (niedz. 10:00)
-      - HEALTH_PORT=8080
-      - LOG_LEVEL=INFO             # DEBUG | INFO | WARN | ERROR
 
-      # ------ Platformy (0 = wyłączona) ------
-      - CLAIM_STEAM=1
-      - CLAIM_EPIC=1
-      - CLAIM_PRIME=1
-      - CLAIM_GOG=1
+    # Wybierz platformy które chcesz — usuń lub dodaj: node steam-games; node aliexpress itd.
+    # sleep 1d + restart: unless-stopped = uruchamia się codziennie automatycznie
+    command: bash -c "node prime-gaming; node gog; node epic-games; node aliexpress; sleep 1d"
+
+    environment:
+      - LOG_LEVEL=INFO             # DEBUG | INFO | WARN | ERROR
 
       # ------ Discord webhook ------
       # - DISCORD_WEBHOOK=https://discord.com/api/webhooks/TWOJE_ID/TOKEN
@@ -39,7 +30,6 @@ services:
       # - VNC_PASSWORD=tajnehaslo   # zalecane — bez hasła noVNC jest otwarte!
 
       # ------ Dane logowania ------
-      # Możesz ustawić wspólny EMAIL/PASSWORD dla wszystkich platform:
       # - EMAIL=twoj@email.com
       # - PASSWORD=haslo
 
@@ -69,9 +59,7 @@ services:
       # - LOGIN_TIMEOUT=180
 
     healthcheck:
-      test: >
-        curl --fail http://localhost:6080 &&
-        curl --fail http://localhost:8080/health
+      test: curl --fail http://localhost:6080 || exit 1
       interval: 30s
       timeout: 10s
       start_period: 20s
