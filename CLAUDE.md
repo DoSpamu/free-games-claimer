@@ -4,80 +4,90 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A fork of [p-adamiec/free-games-claimer:enhanced](https://github.com/p-adamiec/free-games-claimer) (itself a fork of vogler/free-games-claimer). The upstream repo contains the actual game-claiming scripts (`epic-games.js`, `gog.js`, `prime-gaming.js`, `steam-games.js`). This fork adds:
+A fork of [p-adamiec/free-games-claimer:enhanced](https://github.com/p-adamiec/free-games-claimer) (itself a fork of vogler/free-games-claimer). The upstream repo contains the actual game-claiming scripts (`epic-games.js`, `gog.js`, `prime-gaming.js`, `steam-games.js`, `aliexpress.js`). This fork adds:
 
-- **`scheduler.js`** — long-running daemon (node-cron) that replaces the `sleep 1d` loop
-- **`src/discord.js`** — Discord webhook notifications
-- **`src/logger.js`** — structured logger
+- **`run.js`** — one-shot runner: sends Discord notifications for startup / nothing-to-claim / error+screenshot, then exits
+- **`src/discord.js`** — Discord webhook notification module
+- **`src/logger.js`** — structured logger with timestamps and levels
+- **`src/util.js`** — override of upstream's util: `notify(html)` also fires Discord alongside Apprise
 
-The upstream scripts are **not present** in this repo — only the overlay files are tracked here. The full image is built on top of `ghcr.io/p-adamiec/free-games-claimer:enhanced`.
+The upstream scripts are **not present** in this repo — only the overlay files are tracked here. The image is built on top of `ghcr.io/p-adamiec/free-games-claimer:enhanced`.
 
 ## Commands
 
 ```bash
-# Install dependencies (after cloning upstream alongside these files)
-npm install
+# Build and start (Portainer / local)
+docker compose up -d --build
 
-# Lint
-npm run lint
+# Follow logs
+docker compose logs -f
 
-# Run the daemon locally
-node scheduler.js
+# Run manually (single platform)
+docker exec fgc node epic-games.js
 
-# Run a single platform script (upstream file)
-node epic-games.js
-```
-
-Docker:
-```bash
-docker compose up -d          # start daemon
-docker compose logs -f        # follow logs
-
-# Manual trigger (no recreate needed)
-curl -X POST http://localhost:8080/run
-
-# Health status
-curl http://localhost:8080/health
+# Run all platforms via runner
+docker exec fgc node run.js prime-gaming gog epic-games aliexpress
 ```
 
 ## Architecture
 
-### Execution flow (daemon mode)
+### Execution flow
 
 ```
-docker-entrypoint.sh (upstream: sets DISPLAY, starts TurboVNC + noVNC)
-  └─ node scheduler.js
-       ├─ HTTP server :8080  (GET /health, POST /run)
-       ├─ node-cron fires at CRON_SCHEDULE (default: 0 7 * * * Europe/Warsaw)
-       └─ for each platform: spawn("node", ["<script>.js"])
-            └─ upstream script runs, calls notify() from src/util.js
+docker-entrypoint.sh  (upstream: sets DISPLAY, starts TurboVNC + noVNC on :6080)
+  └─ bash -c "node run.js prime-gaming gog epic-games aliexpress; sleep 1d"
+       │
+       ├─ notifyOnline()              → Discord: 🟢 container started
+       │
+       ├─ for each platform script:
+       │    ├─ countClaimed(db) before
+       │    ├─ spawn("node", ["<script>.js"])
+       │    │    └─ upstream script → notify(html) → Apprise + Discord ✅ (if games claimed)
+       │    ├─ countClaimed(db) after
+       │    ├─ if exit code != 0  → notifyErrorWithScreenshot() → Discord ❌ + PNG
+       │    └─ if no new games   → notifyEmpty()               → Discord ℹ️
+       │
+       └─ process.exit(0)   →   sleep 1d   →   Docker restarts container next day
 ```
+
+`restart: unless-stopped` + `sleep 1d` handles daily scheduling — no cron daemon needed.
 
 ### Notification pipeline
 
-`src/util.js` exports two notification functions:
+`src/util.js` — `notify(html)` (unchanged Apprise behavior + Discord side-effect):
+- Called by upstream scripts when games are claimed
+- Also fires `notifyFromHtml(title, html)` from `src/discord.js` when `DISCORD_WEBHOOK` is set
+- Fire-and-forget — Discord errors never crash the claimer
 
-- `notify(html)` — existing Apprise CLI wrapper (unchanged from upstream)
-- `notifyResult(platform, games)` — new wrapper that calls both Discord (`src/discord.js`) and Apprise in one call; use this in platform scripts instead of `notify()` to get empty/error Discord embeds
+`run.js` — handles the notifications that upstream scripts don't send:
+- `notifyOnline` — on every container start
+- `notifyEmpty` — when a script exits 0 but DB has no new entries
+- `notifyErrorWithScreenshot` — when a script exits non-zero; attaches latest PNG from `data/screenshots/`
 
-`src/discord.js` exports standalone functions for use in `scheduler.js`: `notifyJobStart`, `notifySuccess`, `notifyEmpty`, `notifyError`, `notifyJobSummary`. All are no-ops when `DISCORD_WEBHOOK` is unset, and swallow errors internally so a failed notification never crashes the claimer.
+`src/discord.js` exports:
+- `notifyFromHtml(title, html)` — called by util.notify()
+- `notifyOnline(platforms)` — called by run.js on start
+- `notifyEmpty(platforms)` — called by run.js when nothing claimed
+- `notifyErrorWithScreenshot(platform, error, path)` — called by run.js on error
+- `notifySuccess`, `notifyError`, `notifyJobSummary`, `notifyWeeklyDigest`, `notifyUpstreamUpdate` — available but not currently used
 
 ### Key env vars
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `CRON_SCHEDULE` | `0 7 * * *` | When to run |
-| `TZ` | `Europe/Warsaw` | Timezone for cron |
-| `RUN_ON_START` | `0` | Set `1` to also run on container start |
-| `HEALTH_PORT` | `8080` | Port for `/health` and `POST /run` |
 | `DISCORD_WEBHOOK` | — | Discord webhook URL |
 | `LOG_LEVEL` | `INFO` | `DEBUG`/`INFO`/`WARN`/`ERROR` |
+| `SHOW` | `1` | Show browser in VNC |
+| `VNC_PASSWORD` | — | Password for noVNC on :6080 |
 
-Credentials and Apprise `NOTIFY` are passed through to upstream scripts unchanged — see `.env.example`.
+Credentials (`EG_EMAIL`, `PG_EMAIL`, etc.) are optional — manual VNC login persists in the `fgc_data` volume.
 
 ### Database
 
-Upstream scripts use `lowdb` JSON files in `/fgc/data/` (volume `fgc_data`): `epic-games.json`, `gog.json`, `prime-gaming.json`, `steam.json`. These track claimed/failed/skipped games to avoid duplicate claims.
+Upstream scripts use `lowdb` JSON files in `/fgc/data/` (volume `fgc_data`):
+`epic-games.json`, `gog.json`, `prime-gaming.json`, `steam.json`
+
+`run.js` reads these to detect whether a platform claimed any new games (counts entries with `status: "claimed"` before vs after each script run).
 
 ## GitHub
 

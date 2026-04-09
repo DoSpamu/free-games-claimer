@@ -2,7 +2,7 @@
 
 Fork of [p-adamiec/free-games-claimer:enhanced](https://github.com/p-adamiec/free-games-claimer) adds:
 
-- **Discord webhook** — powiadomienia o odebranych grach jako embedded messages.
+- **Discord webhook** — powiadomienia: kontener uruchomiony, odebrane gry, brak gier, błąd + screenshot.
 - **Slim Dockerfile** — `FROM upstream` zamiast full build; budowanie trwa ~15 sekund.
 - **Structured logging** — timestampy, poziomy INFO/WARN/ERROR widoczne w `docker logs`.
 
@@ -126,7 +126,7 @@ command: bash -c "node run.js steam-games epic-games prime-gaming gog aliexpress
 
 | Zmienna | Opis |
 |---------|------|
-| `DISCORD_WEBHOOK` | URL Discord webhook — embed z listą odebranych gier |
+| `DISCORD_WEBHOOK` | URL Discord webhook — embedy: start kontenera, odebrane gry, brak gier, błąd+screenshot |
 | `NOTIFY` | Apprise URL — Telegram, Slack, email i inne (patrz [apprise docs](https://github.com/caronc/apprise)) |
 | `NOTIFY_TITLE` | Opcjonalny tytuł powiadomień Apprise |
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARN` / `ERROR` (domyślnie `INFO`) |
