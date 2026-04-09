@@ -37,6 +37,10 @@ const DB_FILES = {
   'aliexpress':   null,
 };
 
+// Skrypty które kończą się kodem != 0 nawet gdy działają poprawnie (upstream quirk).
+// Dla nich kod != 0 traktujemy jako "brak czegoś do zrobienia", nie jako błąd.
+const NONZERO_IS_EMPTY = new Set(['aliexpress']);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -112,8 +116,13 @@ for (const script of scripts) {
   const countAfter = await countClaimed(dbFile);
   const newGames   = countAfter - countBefore;
 
-  if (code !== 0) {
-    // Błąd — znajdź screenshot i wyślij powiadomienie
+  if (code !== 0 && NONZERO_IS_EMPTY.has(script)) {
+    // Skrypt zakończył się != 0 ale to znane zachowanie (np. aliexpress gdy brak monet)
+    logger.info(`ℹ ${name}: zakończył się kodem ${code} (traktowane jako brak czegoś do zrobienia)`);
+    await notifyEmpty([name]).catch(() => {});
+
+  } else if (code !== 0) {
+    // Rzeczywisty błąd — znajdź screenshot i wyślij powiadomienie
     const screenshot = await findRecentScreenshot(startTime);
     logger.warn(`✗ ${name} zakończył się kodem ${code}${screenshot ? ' (screenshot dołączony)' : ''}`);
     await notifyErrorWithScreenshot(
