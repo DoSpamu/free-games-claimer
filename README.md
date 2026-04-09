@@ -1,27 +1,29 @@
+> 🇵🇱 [Polish version](README.pl.md)
+
 # free-games-claimer — enhanced fork
 
 Fork of [p-adamiec/free-games-claimer:enhanced](https://github.com/p-adamiec/free-games-claimer).
 
-## Co dodaje ten fork
+## What this fork adds
 
-- **Discord webhook** — powiadomienia: 🟢 start kontenera, ✅ odebrane gry, ℹ️ brak gier, ❌ błąd + screenshot
-- **Slim Dockerfile** — `FROM upstream`, build trwa ~15 sekund
-- **Structured logging** — timestampy i poziomy INFO/WARN/ERROR w `docker logs`
+- **Discord webhook** — notifications: 🟢 container started, ✅ games claimed, ℹ️ nothing to claim, ❌ error + screenshot
+- **Slim Dockerfile** — `FROM upstream`, build takes ~15 seconds
+- **Structured logging** — timestamps and INFO/WARN/ERROR levels in `docker logs`
 
-Upstream obsługuje: Epic Games, Amazon Prime Gaming, GOG, Steam, AliExpress.
+Upstream supports: Epic Games, Amazon Prime Gaming, GOG, Steam, AliExpress.
 
 ---
 
-## Wdrożenie w Portainerze
+## Deploying with Portainer
 
-### Krok 1 — Discord webhook
+### Step 1 — Discord webhook
 
-1. Serwer Discord → Ustawienia kanału → **Integracje** → **Webhooks** → **Nowy webhook**
-2. Skopiuj URL webhooka
+1. Discord server → Channel settings → **Integrations** → **Webhooks** → **New webhook**
+2. Copy the webhook URL
 
-### Krok 2 — Stack
+### Step 2 — Stack
 
-**Stacks → Add stack → Web editor**, wklej i uzupełnij swoje dane:
+**Stacks → Add stack → Web editor**, paste and fill in your details:
 
 ```yaml
 services:
@@ -31,13 +33,13 @@ services:
       context: https://github.com/DoSpamu/free-games-claimer.git#master
     restart: unless-stopped
     ports:
-      - "6080:6080"   # noVNC — podgląd przeglądarki
+      - "6080:6080"   # noVNC — browser preview
       - "5900:5900"   # VNC
     volumes:
       - /mnt/data:/fgc/data
 
-    # Wybierz platformy — usuń lub dodaj nazwy skryptów.
-    # sleep liczy sekundy do następnego 07:00 — kontener budzi się zawsze o tej porze.
+    # Choose platforms — remove or add script names.
+    # sleep calculates seconds until next 07:00 — container always wakes at that time.
     command: >
       bash -c "node run.js prime-gaming gog epic-games aliexpress;
       sleep $$(( $$(date -d 'tomorrow 07:00' +%s) - $$(date +%s) ))s"
@@ -47,35 +49,35 @@ services:
       - SHOW=1
       - LOG_LEVEL=INFO
 
-      # ------ Discord (wymagany dla powiadomień) ------
-      - DISCORD_WEBHOOK=https://discord.com/api/webhooks/TWOJE_ID/TOKEN
+      # ------ Discord (required for notifications) ------
+      - DISCORD_WEBHOOK=https://discord.com/api/webhooks/YOUR_ID/TOKEN
 
       # ------ VNC ------
-      # - VNC_PASSWORD=tajnehaslo   # zalecane!
+      # - VNC_PASSWORD=secretpassword   # recommended!
 
       # ------ AliExpress ------
-      # Bez credentials skrypt zakończy się błędem logowania
-      - ALIEXPRESS_EMAIL=twoj@email.com
-      - ALIEXPRESS_PASSWORD=twoje_haslo
+      # Without credentials the script will fail at login
+      - ALIEXPRESS_EMAIL=your@email.com
+      - ALIEXPRESS_PASSWORD=yourpassword
 
-      # ------ Pozostałe platformy (OPCJONALNE) ------
-      # Bez tych zmiennych: zaloguj się raz ręcznie przez VNC (http://IP:6080).
-      # Sesja zapisuje się w wolumenie — kolejne uruchomienia działają automatycznie.
+      # ------ Other platforms (OPTIONAL) ------
+      # Without these variables: log in once manually via VNC (http://IP:6080).
+      # Session is saved in the volume — subsequent runs work automatically.
       #
-      # Wspólne dla wszystkich:
-      # - EMAIL=twoj@email.com
-      # - PASSWORD=twoje_haslo
+      # Shared for all platforms:
+      # - EMAIL=your@email.com
+      # - PASSWORD=yourpassword
       #
-      # Lub per platforma:
+      # Or per platform:
       # - EG_EMAIL=          # Epic Games
       # - EG_PASSWORD=
-      # - EG_OTPKEY=         # klucz 2FA — skrypt sam generuje kod OTP
+      # - EG_OTPKEY=         # 2FA key — script generates OTP automatically
       # - PG_EMAIL=          # Prime Gaming
       # - PG_PASSWORD=
       # - PG_OTPKEY=
       # - GOG_EMAIL=         # GOG
       # - GOG_PASSWORD=
-      # - STEAM_USERNAME=    # Steam (login, nie email)
+      # - STEAM_USERNAME=    # Steam (login name, not email)
       # - STEAM_PASSWORD=
 
     healthcheck:
@@ -86,89 +88,89 @@ services:
       retries: 3
 ```
 
-> **Build przy pierwszym deploy** trwa ~15 sekund — Portainer pobiera upstream image i kopiuje nasze pliki.
+> **First deploy build** takes ~15 seconds — Portainer pulls the upstream image and copies our overlay files.
 
-### Krok 3 — Pierwsze logowanie
+### Step 3 — First login
 
-Przy pierwszym uruchomieniu każda platforma wymaga ręcznego zalogowania:
+On first run each platform requires manual login:
 
-1. Otwórz `http://TWOJ_IP:6080` — noVNC z przeglądarką Chromium
-2. Zaloguj się ręcznie w otwartych kartach lub wpisz dane w terminalu
-3. Skrypt czeka `LOGIN_TIMEOUT` sekund (domyślnie 180s)
+1. Open `http://YOUR_IP:6080` — noVNC with Chromium browser
+2. Log in manually in the open tabs or enter credentials in the terminal
+3. The script waits `LOGIN_TIMEOUT` seconds (default 180s)
 
-Sesja zapisuje się w wolumenie (`/mnt/data`) — następne uruchomienia są w pełni automatyczne.
-
----
-
-## Harmonogram — bez crontab
-
-```
-deploy o 15:00  → skrypty się wykonują od razu
-                → sleep liczy: do jutrzejszego 07:00 = 16h
-następny dzień 07:00 → kontener się budzi → skrypty → sleep do kolejnego 07:00
-i tak w kółko
-```
-
-`TZ=Europe/Warsaw` sprawia że `date` liczy czas w polskiej strefie.
+Session is saved in the volume (`/mnt/data`) — subsequent runs are fully automatic.
 
 ---
 
-## Wybór platform
+## Scheduling — no crontab needed
 
-Edytuj `command:` — dodaj lub usuń nazwy skryptów:
+```
+deploy at 15:00  → scripts run immediately
+                 → sleep calculates: until tomorrow 07:00 = 16h
+next day 07:00   → container wakes up → scripts → sleep until next 07:00
+and so on
+```
+
+`TZ=Europe/Warsaw` makes `date` calculate time in the Polish timezone.
+
+---
+
+## Choosing platforms
+
+Edit `command:` — add or remove script names:
 
 ```yaml
-# Tylko Prime Gaming i GOG:
+# Only Prime Gaming and GOG:
 command: bash -c "node run.js prime-gaming gog; sleep ..."
 
-# Wszystkie dostępne:
+# All available:
 command: bash -c "node run.js steam-games epic-games prime-gaming gog aliexpress; sleep ..."
 ```
 
-Dostępne skrypty: `steam-games`, `epic-games`, `prime-gaming`, `gog`, `aliexpress`
+Available scripts: `steam-games`, `epic-games`, `prime-gaming`, `gog`, `aliexpress`
 
 ---
 
-## Powiadomienia Discord
+## Discord notifications
 
-| Embed | Kiedy |
-|-------|-------|
-| 🟢 **Kontener uruchomiony** | Na początku każdego uruchomienia |
-| ✅ **Odebrano gry** | Gdy platforma odbierze gry (per platforma) |
-| ℹ️ **Brak nowych gier** | Gdy platforma nie ma nic do odebrania |
-| ❌ **Błąd + screenshot** | Gdy skrypt platformy zakończy się błędem |
+| Embed | When |
+|-------|------|
+| 🟢 **Container started** | At the beginning of every run |
+| ✅ **Games claimed** | When a platform claims games (per platform) |
+| ℹ️ **No new games** | When a platform has nothing to claim |
+| ❌ **Error + screenshot** | When a platform script exits with an error |
 
-Jeśli `DISCORD_WEBHOOK` nie jest ustawiony — wszystkie powiadomienia Discord są pomijane, Apprise działa normalnie.
+If `DISCORD_WEBHOOK` is not set — all Discord notifications are skipped, Apprise works normally.
 
 ---
 
-## Zmienne środowiskowe
+## Environment variables
 
-| Zmienna | Opis |
-|---------|------|
-| `DISCORD_WEBHOOK` | URL webhooka Discord |
-| `TZ` | Strefa czasowa (domyślnie `Europe/Warsaw`) |
+| Variable | Description |
+|----------|-------------|
+| `DISCORD_WEBHOOK` | Discord webhook URL |
+| `TZ` | Timezone (default `Europe/Warsaw`) |
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARN` / `ERROR` |
-| `SHOW` | `1` = pokaż przeglądarkę w VNC |
-| `VNC_PASSWORD` | Hasło do noVNC na `:6080` |
+| `SHOW` | `1` = show browser in VNC |
+| `VNC_PASSWORD` | Password for noVNC on `:6080` |
 
-Pełna lista opcji upstream: [`src/config.js`](https://github.com/p-adamiec/free-games-claimer/blob/enhanced/src/config.js)
+Full list of upstream options: [`src/config.js`](https://github.com/p-adamiec/free-games-claimer/blob/enhanced/src/config.js)
 
 ---
 
 ## VNC
 
-`http://TWOJ_IP:6080` — noVNC z przeglądarką. Działa cały czas w tle (minimalne zasoby), przydatne przy pierwszym logowaniu i debugowaniu.
+`http://YOUR_IP:6080` — noVNC with browser. Runs in the background at all times (minimal resources), useful for first login and debugging.
 
-## Logi
+## Logs
 
 ```bash
 docker logs free-games-claimer-dev -f
-# lub Portainer → Containers → free-games-claimer-dev → Logs
+# or Portainer → Containers → free-games-claimer-dev → Logs
 ```
 
 ---
 
-## Różnice względem upstream
+## Changes from upstream
 
-Patrz [CHANGES.md](CHANGES.md).
+See [CHANGES.md](CHANGES.md).
