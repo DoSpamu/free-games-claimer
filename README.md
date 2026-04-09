@@ -36,9 +36,10 @@ services:
     volumes:
       - fgc_data:/fgc/data
 
-    # Wybierz platformy które chcesz — usuń lub dodaj skrypty w command.
+    # Wybierz platformy — usuń lub dodaj nazwy skryptów.
+    # run.js obsługuje powiadomienia Discord (start/brak gier/błąd+screenshot).
     # sleep 1d + restart: unless-stopped = uruchamia się automatycznie co dobę.
-    command: bash -c "node prime-gaming; node gog; node epic-games; node aliexpress; sleep 1d"
+    command: bash -c "node run.js prime-gaming gog epic-games aliexpress; sleep 1d"
 
     environment:
       - LOG_LEVEL=INFO
@@ -105,14 +106,14 @@ Po zalogowaniu sesja trwa i kolejne uruchomienia działają w pełni automatyczn
 
 ## Wybór platform
 
-Edytuj `command:` w docker-compose — dodaj lub usuń skrypty:
+Edytuj `command:` w docker-compose — dodaj lub usuń nazwy skryptów:
 
 ```yaml
 # Tylko Prime Gaming i GOG:
-command: bash -c "node prime-gaming; node gog; sleep 1d"
+command: bash -c "node run.js prime-gaming gog; sleep 1d"
 
 # Wszystkie dostępne:
-command: bash -c "node steam-games; node epic-games; node prime-gaming; node gog; node aliexpress; sleep 1d"
+command: bash -c "node run.js steam-games epic-games prime-gaming gog aliexpress; sleep 1d"
 ```
 
 ---
@@ -166,7 +167,10 @@ Wysyłane automatycznie przez `notify()` gdy skrypt platformy odbierze gry:
 
 | Embed | Kiedy |
 |-------|-------|
+| 🟢 **Kontener uruchomiony** | Na początku każdego uruchomienia — wiadomo że działa |
 | ✅ **Odebrano gry** | Gdy platforma odbierze przynajmniej jedną grę |
+| ℹ️ **Brak nowych gier** | Gdy platforma nie ma nic do odebrania |
+| ❌ **Błąd + screenshot** | Gdy skrypt platformy zakończy się błędem |
 
 ---
 

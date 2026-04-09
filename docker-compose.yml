@@ -9,9 +9,10 @@ services:
     volumes:
       - fgc_data:/fgc/data
 
-    # Wybierz platformy które chcesz — usuń lub dodaj: node steam-games; node aliexpress itd.
-    # sleep 1d + restart: unless-stopped = uruchamia się codziennie automatycznie
-    command: bash -c "node prime-gaming; node gog; node epic-games; node aliexpress; sleep 1d"
+    # Wybierz platformy — usuń lub dodaj nazwy skryptów.
+    # run.js wysyła powiadomienia o starcie, braku gier i błędach.
+    # sleep 1d + restart: unless-stopped = uruchamia się codziennie automatycznie.
+    command: bash -c "node run.js prime-gaming gog epic-games aliexpress; sleep 1d"
 
     environment:
       - LOG_LEVEL=INFO             # DEBUG | INFO | WARN | ERROR
