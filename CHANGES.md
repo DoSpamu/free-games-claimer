@@ -8,73 +8,101 @@ Zmiany względem upstream: [p-adamiec/free-games-claimer:enhanced](https://githu
 
 ### Dodano
 
-#### `scheduler.js` — daemon mode
+#### Daemon mode (`scheduler.js`)
 - Kontener działa wiecznie — **zero `recreate` w Portainerze**
-- `node-cron` uruchamia skrypty codziennie o godzinie z `CRON_SCHEDULE` (domyślnie `0 7 * * *`)
-- Strefa czasowa konfigurowana przez `TZ` (domyślnie `Europe/Warsaw`)
-- `RUN_ON_START=1` — opcjonalne natychmiastowe uruchomienie po starcie kontenera
+- `node-cron` uruchamia skrypty codziennie wg `CRON_SCHEDULE` (domyślnie `0 7 * * *`)
+- Strefa czasowa przez `TZ` (domyślnie `Europe/Warsaw`)
+- `RUN_ON_START=1` — opcjonalne natychmiastowe uruchomienie po starcie
 - HTTP server na `HEALTH_PORT` (domyślnie `8080`):
   - `GET /health` — JSON ze statusem, czasem ostatniego uruchomienia, uptime
-  - `POST /run` — ręczne uruchomienie bez restartu kontenera (zwraca `409` jeśli job już trwa)
-- Logowanie startu/końca każdego joba z czasem wykonania
-- Graceful shutdown na `SIGTERM`/`SIGINT`
+  - `POST /run` — ręczne uruchomienie bez restartu kontenera (`409` jeśli job trwa)
+- Graceful shutdown: czyści retry timery, czeka do 30s na kończący się job
 
-#### `src/discord.js` — Discord webhook notifications
-Powiadomienia przez Discord webhook (`DISCORD_WEBHOOK` env var). Wszystkie są no-op gdy zmienna nie jest ustawiona i nigdy nie przerywają działania claimera nawet przy błędzie sieci.
-
-| Funkcja | Kiedy wysyłana | Kolor |
-|---------|---------------|-------|
-| `notifyFromHtml` | Przez `notify()` gdy coś odebrano | 🟢 zielony |
-| `notifyJobStart` | Na początku każdego uruchomienia | 🟡 żółty |
-| `notifyJobSummary` | Na końcu — digest wszystkich platform | zależny od wyniku |
-| `notifyError` | Gdy skrypt platformy zakończy się błędem | 🔴 czerwony |
-| `notifySuccess` | Platformy z odebranymi grami | 🟢 zielony |
-| `notifyEmpty` | Brak nowych gier | 🔵 niebieski |
-
-Funkcje używają retry z exponential backoff (3 próby: 1s, 2s, 4s) i timeout 10s per request.
-
-#### `src/logger.js` — structured logging
-- Timestampy na każdej linii (format: `2026-04-08 07:00:00.000`)
-- Poziomy: `DEBUG` / `INFO` / `WARN` / `ERROR` (konfigurowane przez `LOG_LEVEL`)
-- `logger.job(name)` — loguje start/koniec joba z czasem wykonania
-- Logi `ERROR` idą na `stderr`, reszta na `stdout` — poprawna integracja z `docker logs`
+#### Retry po błędzie
+- Jeśli platforma zakończy się z kodem ≠ 0, scheduler automatycznie ponawia ją po 30 minutach
+- Wyłączalne przez `RETRY_FAILED=0`
+- Powiadomienie Discord jeśli retry też nie powiedzie
 
 #### Per-platform toggles
 - `CLAIM_STEAM`, `CLAIM_EPIC`, `CLAIM_PRIME`, `CLAIM_GOG` — domyślnie `1`
 - Ustaw `0` by pominąć daną platformę
-- Na starcie scheduler loguje które platformy są aktywne
-- Jeśli wszystkie wyłączone — kontener nie startuje z czytelnym błędem
+- Na starcie scheduler loguje aktywne platformy; jeśli wszystkie wyłączone — exit z błędem
+
+#### Walidacja credentials przy starcie
+- Sprawdza czy każda **włączona** platforma ma skonfigurowane dane logowania
+- Wyświetla `WARN` w logach jeśli brakuje — bez czekania do 07:00 na błąd
+
+#### Ostrzeżenie VNC bez hasła
+- `WARN` przy starcie gdy `VNC_PASSWORD` nie jest ustawione
+- noVNC na `:6080` jest wtedy dostępne bez uwierzytelnienia
+
+#### Sprawdzanie wersji upstream
+- Na starcie odpytuje GitHub API o najnowszy commit `p-adamiec/free-games-claimer:enhanced`
+- Porównuje z ostatnio zapamiętanym SHA (`data/upstream-sha.txt`)
+- Jeśli wykryje nowe commity: log + embed Discord `🔄 Dostępna aktualizacja upstream`
+
+#### Weekly digest (niedziela 10:00)
+- Osobny cron `0 10 * * 0` czyta pliki `data/*.json` (lowdb)
+- Liczy gry odebrane w ostatnich 7 dniach per platforma
+- Wysyła embed `📅 Tygodniowe podsumowanie` na Discord
+- Wyłączalne przez `WEEKLY_DIGEST=0`
+
+#### Screenshot w powiadomieniu błędu
+- Po błędzie skryptu platformy scheduler szuka najnowszego `.png` w `data/screenshots/`
+- Dołącza go jako attachment do embeda `❌ Błąd` przez Discord multipart upload
+- Fallback do embeda bez obrazka jeśli screenshot nie istnieje / nie jest czytelny
+
+#### Powiadomienie o starcie kontenera
+- Embed `🟢 Claimer online` wysyłany raz przy każdym uruchomieniu kontenera
+- Zawiera listę aktywnych platform i harmonogram
+
+#### `src/discord.js` — nowe funkcje
+| Funkcja | Opis |
+|---------|------|
+| `notifyOnline` | Container started |
+| `notifyErrorWithScreenshot` | Błąd + PNG attachment (multipart upload) |
+| `notifyWeeklyDigest` | Tygodniowe podsumowanie |
+| `notifyUpstreamUpdate` | Nowe commity w upstream repo |
+
+Wszystkie funkcje są no-op gdy `DISCORD_WEBHOOK` nie jest ustawiony i nigdy nie przerywają działania claimera.
+
+#### `src/logger.js`
+- Timestampy na każdej linii
+- Poziomy: `DEBUG` / `INFO` / `WARN` / `ERROR` (przez `LOG_LEVEL`)
+- `logger.job(name)` — loguje start/koniec z czasem wykonania
+- `ERROR` → `stderr`, reszta → `stdout`
 
 ### Zmieniono
 
-#### `src/util.js` — `notify(html)`
-- Oryginalna funkcja działa **bez zmian** (Apprise)
-- Dodany side-effect: gdy `DISCORD_WEBHOOK` jest ustawiony, wysyła embed przez `notifyFromHtml`
-- Fire-and-forget — błąd Discord'a nie wpływa na Apprise i nie przerywa skryptu
-- HTML game list (`<a href>`, `<br>`) jest automatycznie konwertowany na Discord markdown
-
-#### `Dockerfile`
-- `CMD` zmieniony z `node steam-games; node epic-games; ...` na `node scheduler.js`
-- Dodano `EXPOSE 8080`
-- Dodano env defaults: `CRON_SCHEDULE`, `TZ`, `RUN_ON_START`, `LOG_LEVEL`, `HEALTH_PORT`
-- Ulepszony `HEALTHCHECK` — sprawdza zarówno noVNC (`:6080`) jak i scheduler health (`:8080`)
-- `--start-period=15s` żeby healthcheck nie failował podczas bootowania TurboVNC
+#### `Dockerfile` — slim build
+- **`FROM ghcr.io/p-adamiec/free-games-claimer:enhanced`** zamiast `FROM ubuntu:noble`
+- Kopiuje tylko 4 pliki overlay + instaluje `node-cron`
+- Build: **~15 sekund** zamiast ~15 minut
+- `CMD node scheduler.js`
+- `EXPOSE 8080`
+- Nowe env defaults: `CRON_SCHEDULE`, `TZ`, `RUN_ON_START`, `RETRY_FAILED`, `WEEKLY_DIGEST`, `LOG_LEVEL`
+- `HEALTHCHECK` sprawdza zarówno noVNC (`:6080`) jak i scheduler (`:8080`)
 
 #### `docker-compose.yml`
-- Usunięto `command: bash -c "... sleep 1d"` — scheduler zastępuje pętlę
+- Usunięto `command: bash -c "... sleep 1d"` — zastąpione przez scheduler
 - Dodano port `8080:8080`
-- Dodano zmienne: `DISCORD_WEBHOOK`, `CRON_SCHEDULE`, `TZ`, `RUN_ON_START`, `LOG_LEVEL`, `CLAIM_*`
-- Ulepszony `healthcheck` z `start_period: 20s`
+- Dodano zmienne: `DISCORD_WEBHOOK`, `CRON_SCHEDULE`, `TZ`, `RETRY_FAILED`, `WEEKLY_DIGEST`, `CLAIM_*`
+- `build.context` wskazuje bezpośrednio na repo GitHub
+
+#### `src/util.js` — `notify(html)`
+- Oryginalna funkcja działa **bez zmian** (Apprise)
+- Dodany side-effect: Discord embed przez `notifyFromHtml` gdy `DISCORD_WEBHOOK` ustawiony
+- Fire-and-forget — błąd Discord nie wpływa na Apprise
 
 #### `package.json`
-- Dodano dependency: `node-cron ^3.0.3`
-- Dodano skrypt `"start": "node scheduler.js"`
+- Dodano: `node-cron ^3.0.3`
+- Dodano skrypt: `"start": "node scheduler.js"`
 
 ### Nowe pliki
 
 | Plik | Opis |
 |------|------|
-| `scheduler.js` | Daemon z node-cron + HTTP server |
+| `scheduler.js` | Daemon — node-cron + HTTP server + retry + weekly digest |
 | `src/discord.js` | Discord webhook module |
 | `src/logger.js` | Structured logger |
 | `.env.example` | Szablon konfiguracji |
@@ -85,4 +113,5 @@ Funkcje używają retry z exponential backoff (3 próby: 1s, 2s, 4s) i timeout 1
 
 ## Upstream changelog
 
-Zmiany w oryginalnym projekcie: [vogler/free-games-claimer](https://github.com/vogler/free-games-claimer/commits/main) oraz [p-adamiec/free-games-claimer](https://github.com/p-adamiec/free-games-claimer/commits/enhanced).
+[p-adamiec/free-games-claimer:enhanced](https://github.com/p-adamiec/free-games-claimer/commits/enhanced) |
+[vogler/free-games-claimer:main](https://github.com/vogler/free-games-claimer/commits/main)

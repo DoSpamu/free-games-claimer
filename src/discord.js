@@ -4,16 +4,22 @@
  * Set env var DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
  *
  * Exports:
- *   notifyFromHtml(title, html)         – called automatically by util.notify(); converts game-list HTML to embed
- *   notifyJobStart(platforms)          – job started
- *   notifySuccess(platform, games)     – games claimed
- *   notifyEmpty(platforms)             – nothing to claim (all platforms done, 0 new)
- *   notifyError(platform, error)       – script threw / exited non-zero
- *   notifyJobSummary(durationMs, rows) – end-of-job digest
+ *   notifyFromHtml(title, html)                        – called by util.notify(); converts game-list HTML to embed
+ *   notifyOnline(platforms, schedule, tz)              – container came online
+ *   notifyJobStart(platforms)                          – job started
+ *   notifySuccess(platform, games)                     – games claimed
+ *   notifyEmpty(platforms)                             – nothing to claim
+ *   notifyError(platform, error)                       – script threw / exited non-zero
+ *   notifyErrorWithScreenshot(platform, error, path)   – error + screenshot attachment
+ *   notifyJobSummary(durationMs, summary)              – end-of-job digest
+ *   notifyWeeklyDigest(stats)                          – weekly claimed-games summary
+ *   notifyUpstreamUpdate(commitUrl, date)              – upstream repo has new commits
  */
 
 import https from 'node:https';
 import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
 import logger from './logger.js';
 
 const WEBHOOK_URL = process.env.DISCORD_WEBHOOK;
@@ -46,7 +52,6 @@ const post = async (payload, retries = 3) => {
             timeout: 10_000,
           },
           res => {
-            // 204 No Content is the normal Discord response
             if (res.statusCode >= 200 && res.statusCode < 300) {
               res.resume();
               resolve();
@@ -64,17 +69,90 @@ const post = async (payload, retries = 3) => {
         req.write(body);
         req.end();
       });
-      return; // success
+      return;
     } catch (err) {
       if (attempt === retries) {
         logger.warn(`Discord notification failed after ${retries} attempts: ${err.message}`);
-        return; // swallow – notifications must never crash the claimer
+        return;
       }
-      const delay = 1000 * 2 ** (attempt - 1); // 1s, 2s, 4s
+      const delay = 1000 * 2 ** (attempt - 1);
       logger.debug(`Discord attempt ${attempt} failed, retrying in ${delay}ms…`);
       await new Promise(r => setTimeout(r, delay));
     }
   }
+};
+
+/**
+ * POST multipart/form-data to Discord webhook — used for file attachments.
+ * Sends embed JSON + one binary file (e.g. screenshot PNG).
+ */
+const postWithFile = async (embeds, filePath) => {
+  if (!WEBHOOK_URL) return;
+  if (!filePath) return post({ embeds });
+
+  let fileData;
+  try {
+    fileData = fs.readFileSync(filePath);
+  } catch {
+    logger.warn(`Discord: screenshot not readable (${filePath}), sending embed only`);
+    return post({ embeds });
+  }
+
+  const filename = path.basename(filePath);
+  const boundary = `----FGCBoundary${Date.now()}`;
+  const payloadJson = JSON.stringify({
+    embeds: embeds.map(e => ({ ...e, image: { url: `attachment://${filename}` } })),
+  });
+
+  const CRLF = '\r\n';
+  const parts = [
+    `--${boundary}${CRLF}`,
+    `Content-Disposition: form-data; name="payload_json"${CRLF}`,
+    `Content-Type: application/json${CRLF}${CRLF}`,
+    payloadJson, CRLF,
+    `--${boundary}${CRLF}`,
+    `Content-Disposition: form-data; name="files[0]"; filename="${filename}"${CRLF}`,
+    `Content-Type: image/png${CRLF}${CRLF}`,
+  ];
+
+  const header = Buffer.from(parts.join(''));
+  const footer = Buffer.from(`${CRLF}--${boundary}--${CRLF}`);
+  const body   = Buffer.concat([header, fileData, footer]);
+
+  const url = new URL(WEBHOOK_URL);
+  const lib = url.protocol === 'https:' ? https : http;
+
+  await new Promise((resolve, reject) => {
+    const req = lib.request(
+      {
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: {
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          'Content-Length': body.length,
+          'User-Agent': 'free-games-claimer/1.0',
+        },
+        timeout: 15_000,
+      },
+      res => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          res.resume(); resolve();
+        } else {
+          let data = '';
+          res.on('data', c => (data += c));
+          res.on('end', () => reject(new Error(`Discord HTTP ${res.statusCode}: ${data.slice(0, 200)}`)));
+        }
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Discord file upload timed out')); });
+    req.write(body);
+    req.end();
+  }).catch(e => {
+    logger.warn(`Discord screenshot upload failed: ${e.message} – retrying without screenshot`);
+    return post({ embeds });
+  });
 };
 
 const ts = () => new Date().toISOString();
@@ -84,31 +162,36 @@ const ts = () => new Date().toISOString();
 // ---------------------------------------------------------------------------
 
 /**
- * Sent at the very beginning of a run.
- * @param {string[]} platforms  e.g. ['Epic', 'GOG', 'Prime Gaming', 'Steam']
+ * Called once when the container/scheduler starts.
+ * Lets you know the daemon is alive even before the first job runs.
  */
+export const notifyOnline = async (platforms = [], schedule = '', tz = '') => {
+  await post({
+    embeds: [{
+      title: '🟢 Claimer online',
+      color: 0x57F287,
+      description:
+        `Scheduler uruchomiony i gotowy.\n\n` +
+        (platforms.length ? `**Platformy:** ${platforms.join(', ')}\n` : '') +
+        (schedule ? `**Harmonogram:** \`${schedule}\` (${tz})\n` : ''),
+      timestamp: ts(),
+      footer: { text: 'free-games-claimer' },
+    }],
+  });
+};
+
 /**
- * Convert the HTML game list produced by html_game_list() to Discord markdown
- * and send as an embed. Called automatically by util.notify() — no changes
- * needed in platform scripts.
- *
- * @param {string} title  e.g. cfg.notify_title or 'Free Games Claimer'
- * @param {string} html   raw HTML from html_game_list()
+ * Convert HTML game list (from html_game_list()) to Discord markdown embed.
+ * Called automatically by util.notify() — no changes needed in platform scripts.
  */
 export const notifyFromHtml = async (title, html) => {
   if (!WEBHOOK_URL) return;
 
-  // Convert HTML game list to Discord markdown:
-  //   <a href="URL">Title</a> (status)  →  [Title](URL) (status)
-  //   <br>                               →  \n
   const text = html
     .replace(/<a href="([^"]+)">([^<]+)<\/a>/gi, '[$2]($1)')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#039;/g, "'")
     .trim();
 
   await post({
@@ -126,7 +209,7 @@ export const notifyJobStart = async (platforms = []) => {
   await post({
     embeds: [{
       title: '🚀 Claimer uruchomiony',
-      color: 0xFEE75C, // yellow
+      color: 0xFEE75C,
       description: platforms.length
         ? `Platformy do sprawdzenia: **${platforms.join(', ')}**`
         : 'Rozpoczynam sprawdzanie platform…',
@@ -136,11 +219,6 @@ export const notifyJobStart = async (platforms = []) => {
   });
 };
 
-/**
- * Sent when at least one game was claimed on a platform.
- * @param {string} platform  e.g. 'Epic Games'
- * @param {{ title: string, url?: string }[]} games
- */
 export const notifySuccess = async (platform, games = []) => {
   const lines = games
     .map(g => g.url ? `• [${g.title}](${g.url})` : `• ${g.title}`)
@@ -149,7 +227,7 @@ export const notifySuccess = async (platform, games = []) => {
   await post({
     embeds: [{
       title: `✅ Odebrano gry – ${platform}`,
-      color: 0x57F287, // green
+      color: 0x57F287,
       description: lines,
       timestamp: ts(),
       footer: { text: 'free-games-claimer' },
@@ -157,15 +235,11 @@ export const notifySuccess = async (platform, games = []) => {
   });
 };
 
-/**
- * Sent at the end of a full run when nothing new was claimed on any platform.
- * @param {string[]} platforms
- */
 export const notifyEmpty = async (platforms = []) => {
   await post({
     embeds: [{
       title: 'ℹ️ Brak nowych gier do odebrania',
-      color: 0x5865F2, // blurple
+      color: 0x5865F2,
       description:
         `Sprawdzone platformy: **${platforms.join(', ')}**\n\n` +
         'Brak nowych ofert – skrypt wykonał się poprawnie.',
@@ -175,23 +249,15 @@ export const notifyEmpty = async (platforms = []) => {
   });
 };
 
-/**
- * Sent when a script throws or exits with non-zero code.
- * @param {string} platform
- * @param {Error|string} error
- */
 export const notifyError = async (platform, error) => {
   const message = error?.message || String(error);
   const stack = (error?.stack || String(error))
-    .split('\n')
-    .slice(0, 6)
-    .join('\n')
-    .slice(0, 800);
+    .split('\n').slice(0, 6).join('\n').slice(0, 800);
 
   await post({
     embeds: [{
       title: `❌ Błąd – ${platform}`,
-      color: 0xED4245, // red
+      color: 0xED4245,
       description:
         `**Komunikat:**\n\`\`\`\n${message.slice(0, 300)}\n\`\`\`` +
         (stack ? `\n**Stack trace:**\n\`\`\`\n${stack}\n\`\`\`` : ''),
@@ -202,11 +268,31 @@ export const notifyError = async (platform, error) => {
 };
 
 /**
- * End-of-job digest embed.
- * @param {number} durationMs
- * @param {Record<string, { claimed: number, error: boolean, games?: {title:string}[] }>} summary
- *   e.g. { 'Epic Games': { claimed: 2, error: false, games: [...] }, 'GOG': { claimed: 0, error: false } }
+ * Like notifyError but attaches the most recent screenshot PNG as an image.
+ * @param {string} platform
+ * @param {Error|string} error
+ * @param {string|null} screenshotPath  absolute path to .png, or null to skip
  */
+export const notifyErrorWithScreenshot = async (platform, error, screenshotPath = null) => {
+  if (!WEBHOOK_URL) return;
+
+  const message = error?.message || String(error);
+  const stack = (error?.stack || String(error))
+    .split('\n').slice(0, 6).join('\n').slice(0, 800);
+
+  const embed = {
+    title: `❌ Błąd – ${platform}`,
+    color: 0xED4245,
+    description:
+      `**Komunikat:**\n\`\`\`\n${message.slice(0, 300)}\n\`\`\`` +
+      (stack ? `\n**Stack trace:**\n\`\`\`\n${stack}\n\`\`\`` : ''),
+    timestamp: ts(),
+    footer: { text: screenshotPath ? 'free-games-claimer • screenshot dołączony' : 'free-games-claimer' },
+  };
+
+  await postWithFile([embed], screenshotPath);
+};
+
 export const notifyJobSummary = async (durationMs, summary = {}) => {
   const elapsed = (durationMs / 1000).toFixed(1);
   const entries = Object.entries(summary);
@@ -229,6 +315,52 @@ export const notifyJobSummary = async (durationMs, summary = {}) => {
       color: hasError ? 0xED4245 : totalClaimed > 0 ? 0x57F287 : 0x5865F2,
       description: lines.join('\n'),
       fields: [{ name: 'Czas wykonania', value: `${elapsed}s`, inline: true }],
+      timestamp: ts(),
+      footer: { text: 'free-games-claimer' },
+    }],
+  });
+};
+
+/**
+ * Weekly Sunday digest — total games claimed in the last 7 days per platform.
+ * @param {{ platform: string, count: number, titles: string[] }[]} stats
+ */
+export const notifyWeeklyDigest = async (stats = []) => {
+  const total = stats.reduce((n, s) => n + s.count, 0);
+
+  const lines = stats.map(s =>
+    s.count > 0
+      ? `✅ **${s.platform}**: ${s.count} gier\n${s.titles.map(t => `  • ${t}`).join('\n')}`
+      : `ℹ️ **${s.platform}**: brak`
+  );
+
+  await post({
+    embeds: [{
+      title: total > 0
+        ? `📅 Tygodniowe podsumowanie – ${total} gier`
+        : '📅 Tygodniowe podsumowanie – brak nowych gier',
+      color: total > 0 ? 0x9B59B6 : 0x5865F2, // purple / blurple
+      description: lines.join('\n\n') || 'Brak danych.',
+      timestamp: ts(),
+      footer: { text: 'free-games-claimer • ostatnie 7 dni' },
+    }],
+  });
+};
+
+/**
+ * Sent when upstream repo has commits newer than last known.
+ */
+export const notifyUpstreamUpdate = async (commitUrl, commitDate) => {
+  await post({
+    embeds: [{
+      title: '🔄 Dostępna aktualizacja upstream',
+      color: 0xF1C40F,
+      description:
+        `Repozytorium [p-adamiec/free-games-claimer](https://github.com/p-adamiec/free-games-claimer/tree/enhanced) ` +
+        `ma nowe commity.\n\n` +
+        `**Ostatni commit:** ${commitDate}\n` +
+        `**Link:** ${commitUrl}\n\n` +
+        `Rozważ przebudowanie obrazu w Portainerze.`,
       timestamp: ts(),
       footer: { text: 'free-games-claimer' },
     }],

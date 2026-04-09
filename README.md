@@ -2,10 +2,16 @@
 
 Fork of [p-adamiec/free-games-claimer:enhanced](https://github.com/p-adamiec/free-games-claimer) adds:
 
-- **Daemon mode** — kontener działa wiecznie, skrypty odpalaną się automatycznie o zadanej godzinie (domyślnie 07:00). Zero `recreate` w Portainerze.
-- **Discord webhook** — powiadomienia o odebranych grach, braku ofert i błędach jako embedded messages.
+- **Daemon mode** — kontener działa wiecznie, skrypty odpalają się automatycznie o zadanej godzinie (domyślnie 07:00). Zero `recreate` w Portainerze.
+- **Discord webhook** — powiadomienia: container online, job start, odebrane gry, brak gier, błąd + screenshot, podsumowanie, weekly digest, update upstream.
 - **Per-platform toggles** — włącz/wyłącz platformy przez env (`CLAIM_EPIC=0`).
+- **Retry po błędzie** — nieudane platformy automatycznie ponawiane po 30 minutach.
+- **Screenshot w błędzie** — załącza ostatni screenshot PNG bezpośrednio do embeda Discord.
+- **Weekly digest** — co niedzielę o 10:00 podsumowanie co odebrano w ostatnich 7 dniach.
 - **HTTP health endpoint** — `GET /health` + `POST /run` (ręczne uruchomienie bez restartu kontenera).
+- **Walidacja credentials** — ostrzeżenie przy starcie gdy brak danych logowania dla włączonej platformy.
+- **Upstream update check** — powiadomienie na Discord gdy w upstream repo pojawiły się nowe commity.
+- **Slim Dockerfile** — `FROM upstream` zamiast full build; budowanie trwa ~15 sekund.
 - **Structured logging** — timestampy, poziomy INFO/WARN/ERROR widoczne w `docker logs`.
 
 Upstream obsługuje: Epic Games, Amazon Prime Gaming, GOG, Steam.
@@ -121,6 +127,8 @@ Po zalogowaniu sesja trwa i kolejne uruchomienia powinny działać w pełni auto
 | `CRON_SCHEDULE` | `0 7 * * *` | Harmonogram (format cron) |
 | `TZ` | `Europe/Warsaw` | Strefa czasowa dla crona |
 | `RUN_ON_START` | `0` | `1` = uruchom też od razu po starcie kontenera |
+| `RETRY_FAILED` | `1` | `0` = wyłącz automatyczny retry po błędzie |
+| `WEEKLY_DIGEST` | `1` | `0` = wyłącz tygodniowe podsumowanie |
 | `HEALTH_PORT` | `8080` | Port HTTP dla `/health` i `/run` |
 | `LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARN` / `ERROR` |
 
@@ -217,10 +225,13 @@ Scheduler wysyła automatycznie:
 
 | Embed | Kiedy |
 |-------|-------|
+| 🟢 **Claimer online** | Po każdym starcie kontenera |
 | 🚀 **Job uruchomiony** | Na początku każdego uruchomienia |
-| ✅ **Odebrano gry** | Gdy skrypt platformy odbierze gry (przez `notify()`) |
+| ✅ **Odebrano gry** | Gdy skrypt platformy odbierze gry |
 | 📋 **Podsumowanie** | Na końcu każdego uruchomienia |
-| ❌ **Błąd** | Gdy skrypt platformy zakończy się z błędem |
+| ❌ **Błąd + screenshot** | Gdy skrypt platformy zakończy się z błędem |
+| 📅 **Weekly digest** | Co niedzielę o 10:00 — co odebrano w ostatnich 7 dniach |
+| 🔄 **Aktualizacja upstream** | Gdy upstream repo ma nowe commity |
 
 ---
 

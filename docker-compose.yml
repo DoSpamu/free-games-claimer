@@ -1,40 +1,34 @@
 services:
   free-games-claimer:
-    image: ghcr.io/p-adamiec/free-games-claimer:enhanced
     container_name: fgc
-    # build: .   # odkomentuj jeśli budujesz lokalnie
+    build:
+      context: https://github.com/DoSpamu/free-games-claimer.git#master
     restart: unless-stopped
-    tty: true
-    stdin_open: true
     ports:
-      - "6080:6080"   # noVNC
-      - "8080:8080"   # health / manual trigger
+      - "6080:6080"   # noVNC — podgląd przeglądarki w kontenerze
+      - "8080:8080"   # health check / ręczne uruchomienie
     volumes:
       - fgc_data:/fgc/data
-
-    # --- SCHEDULER (nowe) ---
-    # Żaden 'command:' nie jest tu potrzebny – CMD w Dockerfile uruchamia scheduler.js
-    # Możesz nadpisać, np. by uruchomić tylko jeden skrypt:
-    #   command: node epic-games.js
-
     environment:
       # ------ Scheduler ------
       - CRON_SCHEDULE=0 7 * * *    # codziennie o 07:00
       - TZ=Europe/Warsaw
-      - RUN_ON_START=0             # ustaw na 1, by uruchomić od razu po starcie
+      - RUN_ON_START=0             # 1 = uruchom też od razu po starcie
+      - RETRY_FAILED=1             # 1 = ponów próbę po błędzie (po 30 min)
+      - WEEKLY_DIGEST=1            # 1 = tygodniowe podsumowanie (niedz. 10:00)
       - HEALTH_PORT=8080
       - LOG_LEVEL=INFO             # DEBUG | INFO | WARN | ERROR
 
-      # ------ Platformy (domyślnie wszystkie włączone, ustaw 0 by wyłączyć) ------
+      # ------ Platformy (0 = wyłączona) ------
       - CLAIM_STEAM=1
       - CLAIM_EPIC=1
       - CLAIM_PRIME=1
       - CLAIM_GOG=1
 
-      # ------ Discord webhook (nowe) ------
+      # ------ Discord webhook ------
       # - DISCORD_WEBHOOK=https://discord.com/api/webhooks/TWOJE_ID/TOKEN
 
-      # ------ Apprise (istniejące) ------
+      # ------ Apprise (alternatywne powiadomienia) ------
       # - NOTIFY=tgram://bottoken/chatid
       # - NOTIFY_TITLE=Free Games Claimer
 
@@ -42,11 +36,12 @@ services:
       - SHOW=1
       - WIDTH=1920
       - HEIGHT=1080
-      # - VNC_PASSWORD=
+      # - VNC_PASSWORD=tajnehaslo   # zalecane — bez hasła noVNC jest otwarte!
 
       # ------ Dane logowania ------
-      # - EMAIL=
-      # - PASSWORD=
+      # Możesz ustawić wspólny EMAIL/PASSWORD dla wszystkich platform:
+      # - EMAIL=twoj@email.com
+      # - PASSWORD=haslo
 
       # Epic Games
       # - EG_EMAIL=
@@ -64,7 +59,6 @@ services:
       # GOG
       # - GOG_EMAIL=
       # - GOG_PASSWORD=
-      # - GOG_NEWSLETTER=0
 
       # Steam
       # - STEAM_USERNAME=
@@ -72,16 +66,15 @@ services:
 
       # ------ Inne ------
       # - TIMEOUT=60
-      # - LOGIN_TIMEOUT=100
+      # - LOGIN_TIMEOUT=180
 
     healthcheck:
-      # Sprawdza noVNC i scheduler health endpoint
       test: >
         curl --fail http://localhost:6080 &&
         curl --fail http://localhost:8080/health
       interval: 30s
       timeout: 10s
-      start_period: 15s
+      start_period: 20s
       retries: 3
 
 volumes:
