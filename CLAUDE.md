@@ -47,10 +47,10 @@ docker-entrypoint.sh  (upstream: sets DISPLAY, starts TurboVNC + noVNC on :6080)
        │    ├─ if exit code != 0  → notifyErrorWithScreenshot() → Discord ❌ + PNG
        │    └─ if no new games   → notifyEmpty()               → Discord ℹ️
        │
-       └─ process.exit(0)   →   sleep 1d   →   Docker restarts container next day
+       └─ process.exit(0)   →   sleep until 07:00   →   Docker restarts container
 ```
 
-`restart: unless-stopped` + `sleep 1d` handles daily scheduling — no cron daemon needed.
+`restart: unless-stopped` + `sleep $(( $(date -d 'tomorrow 07:00' +%s) - $(date +%s) ))s` handles daily scheduling at a fixed time — no cron daemon needed. `TZ=Europe/Warsaw` makes `date` timezone-aware.
 
 ### Notification pipeline
 
