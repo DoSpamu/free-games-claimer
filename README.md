@@ -14,7 +14,7 @@
 
 <br/>
 
-> Fork of [p-adamiec/free-games-claimer:enhanced](https://github.com/p-adamiec/free-games-claimer) — adds Discord webhooks, slim Dockerfile and structured logging.
+> Fork of [p-adamiec/free-games-claimer:enhanced]([(https://github.com/vogler/free-games-claimer)](https://github.com/vogler/free-games-claimer)) — adds Discord webhooks, slim Dockerfile and structured logging.
 
 </div>
 
