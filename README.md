@@ -37,7 +37,7 @@
 
 | <img src="https://github.com/user-attachments/assets/82e9e9bf-b6ac-4f20-91db-36d2c8429cb6" width="40"/><br/>**Epic Games** | <img src="https://github.com/user-attachments/assets/7627a108-20c6-4525-a1d8-5d221ee89d6e" width="40"/><br/>**Prime Gaming** | <img src="https://github.com/user-attachments/assets/49040b50-ee14-4439-8e3c-e93cafd7c3a5" width="40"/><br/>**GOG** | <img src="https://github.com/user-attachments/assets/3582444b-f23b-448d-bf31-01668cd0313a" width="40"/><br/>**Steam** | 🛒<br/>**AliExpress** |
 |:---:|:---:|:---:|:---:|:---:|
-| Weekly | Monthly | Bi-weekly | Giveaways | Coupons |
+| FreeGames | FreeGames | FreeGames | FreeGames | Points |
 
 </div>
 
